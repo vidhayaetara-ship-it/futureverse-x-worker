@@ -1,10 +1,13 @@
-name: FutureVerse X Worker Test
+name: FutureVerse X Video Test
 
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
-  test-worker:
+  render-video:
     runs-on: ubuntu-latest
 
     steps:
@@ -13,7 +16,15 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y ffmpeg
 
-      - name: Check worker
+      - name: Create vertical MP4
         run: |
-          echo "FutureVerse X Worker is working!"
-          ffmpeg -version
+          ffmpeg -f lavfi -i "color=c=0x101828:s=1080x1920:r=30:d=5" \
+          -vf "drawtext=text='FutureVerse X':fontcolor=white:fontsize=100:x=(w-text_w)/2:y=(h-text_h)/2" \
+          -c:v libx264 -pix_fmt yuv420p -t 5 \
+          futureverse-test.mp4
+
+      - name: Save test video
+        uses: actions/upload-artifact@v4
+        with:
+          name: futureverse-test-video
+          path: futureverse-test.mp4
