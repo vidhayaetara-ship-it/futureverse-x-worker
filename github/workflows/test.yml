@@ -1,0 +1,14 @@
+name: FutureVerse X Worker Test
+
+on:
+  workflow_dispatch:
+
+jobs:
+  test-worker:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check worker
+        run: |
+          echo "FutureVerse X Worker is working!"
+          ffmpeg -version
