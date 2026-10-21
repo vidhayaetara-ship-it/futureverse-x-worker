@@ -1,0 +1,33 @@
+name: FutureVerse X Male Voice Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate-voice:
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Install Piper TTS
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install piper-tts
+
+      - name: Download English Male Voice
+        run: |
+          python -m piper.download_voices en_US-ryan-low
+
+      - name: Generate Voiceover
+        run: |
+          echo "Welcome to FutureVerse X. Discover amazing facts about science, technology, and our incredible universe." | python -m piper \
+            --model en_US-ryan-low \
+            --output_file futureverse-voice.wav
+
+      - name: Save Voiceover
+        uses: actions/upload-artifact@v4
+        with:
+          name: futureverse-male-voice
+          path: futureverse-voice.wav
