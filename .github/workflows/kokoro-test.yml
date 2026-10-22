@@ -1,0 +1,67 @@
+name: FutureVerse X Kokoro Voice Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  generate-voice:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y espeak-ng
+          python -m pip install --upgrade pip
+          python -m pip install kokoro soundfile
+
+      - name: Generate calm male voice
+        run: |
+          cat > voice.py <<'PY'
+          from kokoro import KPipeline
+          import soundfile as sf
+          import numpy as np
+
+          text = (
+              "Somewhere in our universe, "
+              "there are worlds we have never seen. "
+              "And every new discovery brings us "
+              "one step closer to understanding them."
+          )
+
+          pipeline = KPipeline(lang_code='b')
+
+          audio_parts = []
+
+          for _, _, audio in pipeline(
+              text,
+              voice='bm_george',
+              speed=0.9
+          ):
+              audio_parts.append(audio)
+
+          if not audio_parts:
+              raise RuntimeError("No audio generated")
+
+          full_audio = np.concatenate(audio_parts)
+
+          sf.write(
+              "futureverse-kokoro.wav",
+              full_audio,
+              24000
+          )
+
+          print("Voice generated successfully!")
+          PY
+
+          python voice.py
+
+      - name: Save voice
+        uses: actions/upload-artifact@v4
+        with:
+          name: futureverse-kokoro-male
+          path: futureverse-kokoro.wav
