@@ -1,0 +1,211 @@
+name: FutureVerse X Cartoon Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  create-cartoon:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+
+    steps:
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg espeak-ng fonts-dejavu-core
+          python -m pip install pillow numpy kokoro soundfile
+
+      - name: Create animated cartoon
+        run: |
+          cat > cartoon.py <<'PY'
+          import math
+          import random
+          import os
+          import numpy as np
+          import soundfile as sf
+          from PIL import Image, ImageDraw, ImageFont
+          from kokoro import KPipeline
+
+          W, H = 540, 960
+          FPS = 12
+
+          script = (
+              "Meet Bibo, a tiny robot with a big dream. "
+              "One night, he found a lost little star. "
+              "Bibo jumped as high as he could. "
+              "And together, they lit up the sky!"
+          )
+
+          pipeline = KPipeline(lang_code="b")
+          chunks = []
+
+          for _, _, audio in pipeline(
+              script,
+              voice="bm_george",
+              speed=0.95
+          ):
+              chunks.append(np.asarray(audio))
+
+          if not chunks:
+              raise RuntimeError("Voice generation failed")
+
+          voice = np.concatenate(chunks)
+          sf.write("cartoon-voice.wav", voice, 24000)
+
+          duration = len(voice) / 24000
+          duration = max(duration, 12)
+
+          os.makedirs("frames", exist_ok=True)
+          random.seed(7)
+
+          stars = [
+              (random.randint(0, W), random.randint(0, 650),
+               random.randint(2, 5))
+              for _ in range(45)
+          ]
+
+          font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+          font = ImageFont.truetype(font_path, 25)
+          small = ImageFont.truetype(font_path, 20)
+
+          subtitles = [
+              "Meet Bibo, a tiny robot",
+              "with a big dream!",
+              "He found a lost little star.",
+              "Bibo jumped into the sky!",
+              "Together, they lit it up!"
+          ]
+
+          total_frames = int(duration * FPS)
+
+          for frame in range(total_frames):
+              t = frame / FPS
+
+              img = Image.new("RGB", (W, H), (12, 15, 55))
+              d = ImageDraw.Draw(img)
+
+              # Animated stars
+              for i, (sx, sy, r) in enumerate(stars):
+                  glow = int(150 + 90 * abs(math.sin(t*2 + i)))
+                  d.ellipse(
+                      (sx-r, sy-r, sx+r, sy+r),
+                      fill=(glow, glow, 255)
+                  )
+
+              # Moon surface
+              d.ellipse((-100, 650, 640, 1200),
+                        fill=(155, 165, 205))
+
+              # Robot movement
+              jump = abs(math.sin(t * 1.5)) * 65
+              bx = int(W/2 + 75*math.sin(t*0.8))
+              by = int(620 - jump)
+
+              # Robot body
+              d.rounded_rectangle(
+                  (bx-65, by-80, bx+65, by+80),
+                  radius=25,
+                  fill=(80, 215, 245),
+                  outline="white",
+                  width=4
+              )
+
+              # Face
+              d.rounded_rectangle(
+                  (bx-48, by-55, bx+48, by+10),
+                  radius=15,
+                  fill=(20, 35, 80)
+              )
+
+              blink = int(t*2) % 9 == 0
+
+              if blink:
+                  d.line((bx-32, by-25, bx-15, by-25),
+                         fill="white", width=4)
+                  d.line((bx+15, by-25, bx+32, by-25),
+                         fill="white", width=4)
+              else:
+                  d.ellipse((bx-35, by-35, bx-15, by-15),
+                            fill="white")
+                  d.ellipse((bx+15, by-35, bx+35, by-15),
+                            fill="white")
+
+              # Arms
+              d.line((bx-65, by, bx-100, by-25),
+                     fill=(80, 215, 245), width=17)
+              d.line((bx+65, by, bx+100, by-25),
+                     fill=(80, 215, 245), width=17)
+
+              # Legs
+              d.line((bx-30, by+80, bx-30, by+110),
+                     fill=(50, 120, 190), width=18)
+              d.line((bx+30, by+80, bx+30, by+110),
+                     fill=(50, 120, 190), width=18)
+
+              # Flying star
+              star_x = int(420 - 130*min(t/duration, 1))
+              star_y = int(300 - 80*math.sin(t*0.8))
+
+              points = []
+              for j in range(10):
+                  angle = j*math.pi/5 - math.pi/2
+                  radius = 33 if j%2 == 0 else 15
+                  points.append((
+                      star_x + radius*math.cos(angle),
+                      star_y + radius*math.sin(angle)
+                  ))
+
+              d.polygon(points, fill=(255, 230, 65))
+
+              # Title
+              title = "BIBO & THE LOST STAR"
+              box = d.textbbox((0,0), title, font=font)
+              d.text(((W-(box[2]-box[0]))/2, 100),
+                     title, font=font, fill="white")
+
+              # Simple timed captions
+              index = min(
+                  int(t / (duration / len(subtitles))),
+                  len(subtitles)-1
+              )
+
+              caption = subtitles[index]
+              box = d.textbbox((0,0), caption, font=small)
+              tw = box[2]-box[0]
+
+              d.rounded_rectangle(
+                  (W/2-tw/2-15, 810, W/2+tw/2+15, 855),
+                  radius=12,
+                  fill=(0, 0, 0)
+              )
+
+              d.text(((W-tw)/2, 820),
+                     caption, font=small, fill="white")
+
+              img.save(f"frames/{frame:05d}.png")
+
+          print(f"Generated {total_frames} cartoon frames")
+          PY
+
+          python cartoon.py
+
+      - name: Render cartoon MP4
+        run: |
+          ffmpeg -y \
+            -framerate 12 -i frames/%05d.png \
+            -i cartoon-voice.wav \
+            -c:v libx264 -preset veryfast -crf 23 \
+            -pix_fmt yuv420p \
+            -c:a aac -b:a 128k \
+            -shortest \
+            futureverse-cartoon.mp4
+
+      - name: Save cartoon
+        uses: actions/upload-artifact@v4
+        with:
+          name: futureverse-cartoon-test
+          path: futureverse-cartoon.mp4
+          if-no-files-found: error
